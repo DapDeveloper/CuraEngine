@@ -237,7 +237,6 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         minutes=static_cast<int>(*print_time);
         minutes=minutes%60;
         prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time) : 6666) << new_line;
-        prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time)) << new_line;
         prefix <<";   Build time: "<<hours<<" hours "<<minutes<<" minutes"<<new_line;
         if (flavor == EGCodeFlavor::ULTIGCODE)
         {
