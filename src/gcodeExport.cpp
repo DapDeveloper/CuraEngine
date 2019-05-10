@@ -215,7 +215,6 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         }
 
         prefix << ";PRINT.GROUPS:" << Application::getInstance().current_slice->scene.mesh_groups.size() << new_line;
-
         if (total_bounding_box.min.x > total_bounding_box.max.x) //We haven't encountered any movement (yet). This probably means we're command-line slicing.
         {
             //Put some small default in there.
@@ -234,7 +233,7 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         prefix << ";FLAVOR:" << flavorToString(flavor) << new_line;
         minutes=static_cast<int>(*print_time)/60;
         //prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time) : 6666) << new_line;
-        prefix <<";   Build time: "<<minutes<<" minutes"<<new_line;
+        prefix <<"; Build time: "<<minutes<<" minutes"<<new_line;
         if (flavor == EGCodeFlavor::ULTIGCODE)
         {
             prefix << ";MATERIAL:" << ((filament_used.size() >= 1)? static_cast<int>(filament_used[0]) : 6666) << new_line;
@@ -276,7 +275,6 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         prefix << ";MAXY:" << INT2MM(total_bounding_box.max.y) << new_line;
         prefix << ";MAXZ:" << INT2MM(total_bounding_box.max.z) << new_line;
     }
-
     return prefix.str();
 }
 
