@@ -232,11 +232,10 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         break;
     default:
         prefix << ";FLAVOR:" << flavorToString(flavor) << new_line;
-        hours=static_cast<int>(*print_time);
-        hours=hours/60;
-        minutes=static_cast<int>(*print_time);
+        hours=static_cast<int>(*print_time)/60/60;
+        minutes=static_cast<int>(*print_time)/60;
         minutes=minutes%60;
-        prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time) : 6666) << new_line;
+        //prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time) : 6666) << new_line;
         prefix <<";   Build time: "<<hours<<" hours "<<minutes<<" minutes"<<new_line;
         if (flavor == EGCodeFlavor::ULTIGCODE)
         {
