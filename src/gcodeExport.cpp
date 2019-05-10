@@ -232,15 +232,14 @@ std::string GCodeExport::getFileHeader(const std::vector<bool>& extruder_is_used
         break;
     default:
         prefix << ";FLAVOR:" << flavorToString(flavor) << new_line;
-        int hours=print_time/60
-        int minutes=print_time%60
+        int hours=static_cast<int>print_time/60
+        int minutes=static_cast<int>print_time%60
         //prefix << ";TIME:" << ((print_time)? static_cast<int>(*print_time) : 6666) << new_line;
         prefix <<";   Build time: "<<hours<<" hours "<<minutes<<" minutes"<<new_line;
         if (flavor == EGCodeFlavor::ULTIGCODE)
         {
             prefix << ";MATERIAL:" << ((filament_used.size() >= 1)? static_cast<int>(filament_used[0]) : 6666) << new_line;
             prefix << ";MATERIAL2:" << ((filament_used.size() >= 2)? static_cast<int>(filament_used[1]) : 0) << new_line;
-
             prefix << ";NOZZLE_DIAMETER:" << Application::getInstance().current_slice->scene.extruders[0].settings.get<double>("machine_nozzle_size") << new_line;
         }
         else if (flavor == EGCodeFlavor::REPRAP || flavor == EGCodeFlavor::MARLIN || flavor == EGCodeFlavor::MARLIN_VOLUMATRIC)

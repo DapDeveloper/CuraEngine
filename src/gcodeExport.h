@@ -137,7 +137,9 @@ private:
 
     std::vector<Duration> total_print_times; //!< The total estimated print time in seconds for each feature
     TimeEstimateCalculator estimateCalculator;
-    
+    int hours;
+    int minutes;
+
     bool is_volumetric;
     bool relative_extrusion; //!< whether to use relative extrusion distances rather than absolute
 
