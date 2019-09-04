@@ -1,370 +1,104 @@
-#Copyright (c) 2019 Ultimaker B.V.
-#CuraEngine is released under the terms of the AGPLv3 or higher.
+project(cura)
+cmake_minimum_required(VERSION 3.6)
 
-project(CuraEngine)
+include(GNUInstallDirs)
 
-cmake_minimum_required(VERSION 3.0.0)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
-option (ENABLE_ARCUS
-    "Enable support for ARCUS" ON)
+set(URANIUM_DIR "${CMAKE_SOURCE_DIR}/../Uranium" CACHE DIRECTORY "The location of the Uranium repository")
+set(URANIUM_SCRIPTS_DIR "${URANIUM_DIR}/scripts" CACHE DIRECTORY "The location of the scripts directory of the Uranium repository")
 
-if (MSVC)
-    option(MSVC_STATIC_RUNTIME "Link the MSVC runtime statically" OFF)
+# Tests
+include(CuraTests)
+
+option(CURA_DEBUGMODE "Enable debug dialog and other debug features" OFF)
+if(CURA_DEBUGMODE)
+    set(_cura_debugmode "ON")
 endif()
 
-if (ENABLE_ARCUS)
-    message(STATUS "Building with Arcus")
-    # We want to have access to protobuf_generate_cpp and other FindProtobuf features.
-    # However, if ProtobufConfig is used instead, there is a CMake option that controls
-    # this, which defaults to OFF. We need to force this option to ON instead.
-    set(protobuf_MODULE_COMPATIBLE ON CACHE "" INTERNAL FORCE)
-    find_package(Protobuf 3.0.0 REQUIRED)
-    find_package(Arcus REQUIRED)
-    add_definitions(-DARCUS)
-endif ()
+set(CURA_APP_NAME "cura" CACHE STRING "Short name of Cura, used for configuration folder")
+set(CURA_APP_DISPLAY_NAME "Ultimaker Cura" CACHE STRING "Display name of Cura")
+set(CURA_VERSION "master" CACHE STRING "Version name of Cura")
+set(CURA_BUILDTYPE "" CACHE STRING "Build type of Cura, eg. 'PPA'")
+set(CURA_SDK_VERSION "" CACHE STRING "SDK version of Cura")
+set(CURA_CLOUD_API_ROOT "" CACHE STRING "Alternative Cura cloud API root")
+set(CURA_CLOUD_API_VERSION "" CACHE STRING "Alternative Cura cloud API version")
 
-#For reading image files.
-find_package(Stb REQUIRED)
-include_directories(${Stb_INCLUDE_DIRS})
+configure_file(${CMAKE_SOURCE_DIR}/cura.desktop.in ${CMAKE_BINARY_DIR}/cura.desktop @ONLY)
+configure_file(cura/CuraVersion.py.in CuraVersion.py @ONLY)
 
-option(USE_SYSTEM_LIBS "Use the system libraries if available" OFF)
-if(USE_SYSTEM_LIBS)
-    find_package(RapidJSON CONFIG REQUIRED)
-    find_package(Polyclipping REQUIRED)
-endif()
 
-# convert build type to upper case letters
-if(CMAKE_BUILD_TYPE)
-    string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPER)
-endif()
+# FIXME: Remove the code for CMake <3.12 once we have switched over completely.
+# FindPython3 is a new module since CMake 3.12. It deprecates FindPythonInterp and FindPythonLibs. The FindPython3
+# module is copied from the CMake repository here so in CMake <3.12 we can still use it.
+if(${CMAKE_VERSION} VERSION_LESS 3.12)
+    # Use FindPythonInterp and FindPythonLibs for CMake <3.12
+    find_package(PythonInterp 3 REQUIRED)
 
-if(CMAKE_BUILD_TYPE_UPPER MATCHES "DEBUG")
-    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_DEBUG_INIT})
+    set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+
+    set(Python3_VERSION ${PYTHON_VERSION_STRING})
+    set(Python3_VERSION_MAJOR ${PYTHON_VERSION_MAJOR})
+    set(Python3_VERSION_MINOR ${PYTHON_VERSION_MINOR})
+    set(Python3_VERSION_PATCH ${PYTHON_VERSION_PATCH})
 else()
-    set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS_RELEASE_INIT})
+    # Use FindPython3 for CMake >=3.12
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 endif()
 
-if(NOT ${CMAKE_VERSION} VERSION_LESS 3.1)
-    set(CMAKE_CXX_STANDARD 11)
-elseif(not MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
+if(NOT ${URANIUM_DIR} STREQUAL "")
+    set(CMAKE_MODULE_PATH "${URANIUM_DIR}/cmake")
+endif()
+if(NOT ${URANIUM_SCRIPTS_DIR} STREQUAL "")
+    list(APPEND CMAKE_MODULE_PATH ${URANIUM_DIR}/cmake)
+    include(UraniumTranslationTools)
+    # Extract Strings
+    add_custom_target(extract-messages ${URANIUM_SCRIPTS_DIR}/extract-messages ${CMAKE_SOURCE_DIR} cura)
+    # Build Translations
+    CREATE_TRANSLATION_TARGETS()
 endif()
 
-if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -stdlib=libc++")
-endif()
 
-if(NOT DEFINED LIB_SUFFIX)
-    set(LIB_SUFFIX "")
-endif()
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}")
-
-set(CURA_ENGINE_VERSION "master" CACHE STRING "Version name of Cura")
-
-option(BUILD_TESTS OFF)
-
-# Add a compiler flag to check the output for insane values if we are in debug mode.
-if(CMAKE_BUILD_TYPE_UPPER MATCHES "DEBUG" OR CMAKE_BUILD_TYPE_UPPER MATCHES "RELWITHDEBINFO")
-    message(STATUS "Building debug release of CuraEngine.")
-    if (NOT MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra -O0 -g -fno-omit-frame-pointer")
-    endif()
-    add_definitions(-DASSERT_INSANE_OUTPUT)
-    add_definitions(-DUSE_CPU_TIME)
-    add_definitions(-DDEBUG)
-endif()
-
-if (MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /permissive- /Zc:twoPhase- /EHsc /W3")
-    if (MSVC_STATIC_RUNTIME)
-        foreach(flag_var
-            CMAKE_CXX_FLAGS
-            CMAKE_CXX_FLAGS_DEBUG
-            CMAKE_CXX_FLAGS_RELEASE
-            CMAKE_CXX_FLAGS_MINSIZEREL
-            CMAKE_CXX_FLAGS_RELWITHDEBINFO
-            )
-            if(${flag_var} MATCHES "/MD")
-                string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
-            endif()
-        endforeach()
-    endif()
-else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall") # Add warnings
-endif()
-
-option (ENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS
-    "Enable more optimization flags" ON)
-if (ENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS)
-    message (STATUS "Compile with more optimization flags")
-    if (MSVC)
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} /fp:fast")
-    else()
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -Ofast -funroll-loops")
-    endif()
-endif ()
+install(DIRECTORY resources
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/cura)
+install(DIRECTORY plugins
+        DESTINATION lib${LIB_SUFFIX}/cura)
 
 if(NOT APPLE AND NOT WIN32)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libstdc++")
-endif()
-
-if (WIN32)
-    add_definitions(-DNOMINMAX)
-endif()
-
-option (ENABLE_OPENMP
-    "Use OpenMP for parallel code" ON)
-
-if (ENABLE_OPENMP)
-    FIND_PACKAGE( OpenMP )
-    if( OPENMP_FOUND )
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}" )
+    install(FILES cura_app.py
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+            RENAME cura)
+    if(EXISTS /etc/debian_version)
+        install(DIRECTORY cura
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}/dist-packages
+            FILES_MATCHING PATTERN *.py)
+        install(FILES ${CMAKE_BINARY_DIR}/CuraVersion.py
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}/dist-packages/cura)
+    else()
+        install(DIRECTORY cura
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages
+            FILES_MATCHING PATTERN *.py)
+        install(FILES ${CMAKE_BINARY_DIR}/CuraVersion.py
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/cura)
     endif()
-endif()
-
-if(USE_SYSTEM_LIBS)
-    include_directories(${Polyclipping_INCLUDE_DIRS} ${CMAKE_BINARY_DIR} ${RAPIDJSON_INCLUDE_DIRS})
+    install(FILES ${CMAKE_BINARY_DIR}/cura.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES ${CMAKE_SOURCE_DIR}/resources/images/cura-icon.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/128x128/apps/)
+    install(FILES cura.appdata.xml
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+    install(FILES cura.sharedmimeinfo
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/mime/packages/
+            RENAME cura.xml )
 else()
-    include_directories(${CMAKE_CURRENT_BINARY_DIR} libs libs/clipper)
-    add_library(clipper STATIC libs/clipper/clipper.cpp)
+    install(FILES cura_app.py
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    install(DIRECTORY cura
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages
+            FILES_MATCHING PATTERN *.py)
+    install(FILES ${CMAKE_BINARY_DIR}/CuraVersion.py
+            DESTINATION lib${LIB_SUFFIX}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/cura)
 endif()
-
-set(engine_SRCS # Except main.cpp.
-    src/Application.cpp
-    src/bridge.cpp
-    src/ConicalOverhang.cpp
-    src/ExtruderTrain.cpp
-    src/FffGcodeWriter.cpp
-    src/FffPolygonGenerator.cpp
-    src/FffProcessor.cpp
-    src/gcodeExport.cpp
-    src/GCodePathConfig.cpp
-    src/infill.cpp
-    src/InsetOrderOptimizer.cpp
-    src/layerPart.cpp
-    src/LayerPlan.cpp
-    src/LayerPlanBuffer.cpp
-    src/MergeInfillLines.cpp
-    src/mesh.cpp
-    src/MeshGroup.cpp
-    src/Mold.cpp
-    src/multiVolumes.cpp
-    src/pathOrderOptimizer.cpp
-    src/Preheat.cpp
-    src/PrimeTower.cpp
-    src/raft.cpp
-    src/Scene.cpp
-    src/skin.cpp
-    src/SkirtBrim.cpp
-    src/SupportInfillPart.cpp
-    src/Slice.cpp
-    src/sliceDataStorage.cpp
-    src/slicer.cpp
-    src/support.cpp
-    src/timeEstimate.cpp
-    src/TopSurface.cpp
-    src/TreeSupport.cpp
-    src/WallsComputation.cpp
-    src/wallOverlap.cpp
-    src/Weaver.cpp
-    src/Wireframe2gcode.cpp
-
-    src/communication/ArcusCommunication.cpp
-    src/communication/ArcusCommunicationPrivate.cpp
-    src/communication/CommandLine.cpp
-    src/communication/Listener.cpp
-
-    src/infill/ImageBasedDensityProvider.cpp
-    src/infill/NoZigZagConnectorProcessor.cpp
-    src/infill/ZigzagConnectorProcessor.cpp
-    src/infill/SierpinskiFill.cpp
-    src/infill/SierpinskiFillProvider.cpp
-    src/infill/SpaghettiInfill.cpp
-    src/infill/SpaghettiInfillPathGenerator.cpp
-    src/infill/SubDivCube.cpp
-    src/infill/GyroidInfill.cpp
-
-    src/pathPlanning/Comb.cpp
-    src/pathPlanning/GCodePath.cpp
-    src/pathPlanning/LinePolygonsCrossings.cpp
-    src/pathPlanning/NozzleTempInsert.cpp
-    src/pathPlanning/TimeMaterialEstimates.cpp
-
-    src/progress/Progress.cpp
-    src/progress/ProgressStageEstimator.cpp
-
-    src/settings/AdaptiveLayerHeights.cpp
-    src/settings/FlowTempGraph.cpp
-    src/settings/PathConfigStorage.cpp
-    src/settings/Settings.cpp
-
-    src/utils/AABB.cpp
-    src/utils/AABB3D.cpp
-    src/utils/Date.cpp
-    src/utils/gettime.cpp
-    src/utils/getpath.cpp
-    src/utils/LinearAlg2D.cpp
-    src/utils/ListPolyIt.cpp
-    src/utils/logoutput.cpp
-    src/utils/MinimumSpanningTree.cpp
-    src/utils/Point3.cpp
-    src/utils/PolygonConnector.cpp
-    src/utils/PolygonsPointIndex.cpp
-    src/utils/PolygonProximityLinker.cpp
-    src/utils/polygonUtils.cpp
-    src/utils/polygon.cpp
-    src/utils/ProximityPointLink.cpp
-    src/utils/SVG.cpp
-    src/utils/socket.cpp
-)
-
-# List of tests. For each test there must be a file tests/${NAME}.cpp and a file tests/${NAME}.h.
-set(engine_TEST
-    GCodeExportTest
-    TimeEstimateCalculatorTest
-)
-set(engine_TEST_INFILL
-)
-set(engine_TEST_INTEGRATION
-    SlicePhaseTest
-)
-set(engine_TEST_SETTINGS
-    SettingsTest
-)
-if (ENABLE_ARCUS)
-    set(engine_TEST_ARCUS
-        ArcusCommunicationTest
-        ArcusCommunicationPrivateTest
-    )
-endif ()
-set(engine_TEST_UTILS
-    AABBTest
-    AABB3DTest
-    IntPointTest
-    LinearAlg2DTest
-    MinimumSpanningTreeTest
-    PolygonConnectorTest
-    PolygonTest
-    PolygonUtilsTest
-    SparseGridTest
-    StringTest
-    UnionFindTest
-)
-
-# Helper classes for some tests.
-set(engine_TEST_ARCUS_HELPERS
-    tests/arcus/MockSocket.cpp
-)
-
-# Generating ProtoBuf protocol
-if (ENABLE_ARCUS)
-    protobuf_generate_cpp(engine_PB_SRCS engine_PB_HEADERS Cura.proto)
-endif ()
-
-# Compiling CuraEngine itself.
-add_library(_CuraEngine STATIC ${engine_SRCS} ${engine_PB_SRCS}) #First compile all of CuraEngine as library, allowing this to be re-used for tests.
-
-if (CuraEngine_Download_Stb)
-    add_dependencies(_CuraEngine stb)
-endif()
-if(USE_SYSTEM_LIBS)
-    target_link_libraries(_CuraEngine ${Polyclipping_LIBRARIES})
-else()
-    target_link_libraries(_CuraEngine clipper)
-endif()
-
-if (ENABLE_ARCUS)
-    target_link_libraries(_CuraEngine Arcus)
-endif ()
-
-set_target_properties(_CuraEngine PROPERTIES COMPILE_DEFINITIONS "VERSION=\"${CURA_ENGINE_VERSION}\"")
-
-if(WIN32)
-  message(STATUS "Using windres")
-  set(RES_FILES "CuraEngine.rc")
-  ENABLE_LANGUAGE(RC)
-  if(NOT MSVC)
-    SET(CMAKE_RC_COMPILER_INIT windres)
-    SET(CMAKE_RC_COMPILE_OBJECT
-        "<CMAKE_RC_COMPILER> <FLAGS> -O coff <DEFINES> -i <SOURCE> -o <OBJECT>"
-        )
- endif()
-endif(WIN32)
-
-if (UNIX)
-    target_link_libraries(_CuraEngine pthread)
-endif()
-
-if (NOT WIN32)
-  add_executable(CuraEngine src/main.cpp) # Then compile main.cpp as separate executable, and link the library to it.
-else()
-  add_executable(CuraEngine src/main.cpp ${RES_FILES}) # ..., but don't forget the glitter!
-endif(NOT WIN32)
-
-target_link_libraries(CuraEngine _CuraEngine)
-set_target_properties(CuraEngine PROPERTIES COMPILE_DEFINITIONS "VERSION=\"${CURA_ENGINE_VERSION}\"")
-
-# Compiling the test environment.
-if (BUILD_TESTS)
-    message(STATUS "Building tests...")
-    set(GTEST_USE_STATIC_LIBS true)
-    set(GMOCK_ROOT "${CMAKE_CURRENT_BINARY_DIR}/gmock")
-    set(GMOCK_VER "1.8.0")
-    find_package(GMock REQUIRED)
-    include_directories(${GTEST_INCLUDE_DIRS})
-    include_directories(${GMOCK_INCLUDE_DIRS})
-    add_dependencies(_CuraEngine GTest::GTest GTest::Main GMock::GMock GMock::Main)
-
-    target_compile_definitions(_CuraEngine PUBLIC BUILD_TESTS=1)
-
-    enable_testing()
-
-    #To make sure that the tests are built before running them, add the building of these tests as an additional test.
-    add_custom_target(build_all_tests)
-    add_test(BuildTests "${CMAKE_COMMAND}" --build ${CMAKE_CURRENT_BINARY_DIR} --target build_all_tests)
-
-    foreach (test ${engine_TEST})
-        add_executable(${test} tests/main.cpp tests/${test}.cpp)
-        target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-    endforeach()
-    foreach (test ${engine_TEST_INFILL})
-        add_executable(${test} tests/main.cpp tests/infill/${test}.cpp)
-        target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-    endforeach()
-    foreach (test ${engine_TEST_INTEGRATION})
-        add_executable(${test} tests/main.cpp tests/integration/${test}.cpp)
-        target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-    endforeach()
-    foreach (test ${engine_TEST_SETTINGS})
-        add_executable(${test} tests/main.cpp tests/settings/${test}.cpp)
-        target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-    endforeach()
-    if (ENABLE_ARCUS)
-        foreach (test ${engine_TEST_ARCUS})
-            add_executable(${test} tests/main.cpp ${engine_TEST_ARCUS_HELPERS} tests/arcus/${test}.cpp)
-            target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-            add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-            add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-        endforeach()
-    endif ()
-    foreach (test ${engine_TEST_UTILS})
-        add_executable(${test} tests/main.cpp tests/utils/${test}.cpp)
-        target_link_libraries(${test} _CuraEngine ${GTEST_BOTH_LIBRARIES} ${GMOCK_BOTH_LIBRARIES})
-        add_test(NAME ${test} COMMAND "${test}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
-        add_dependencies(build_all_tests ${test}) #Make sure that this gets built as part of the build_all_tests target.
-    endforeach()
-endif()
-
-# Installing CuraEngine.
-include(GNUInstallDirs)
-install(TARGETS CuraEngine DESTINATION ${CMAKE_INSTALL_BINDIR})
-include(CPackConfig.cmake)
